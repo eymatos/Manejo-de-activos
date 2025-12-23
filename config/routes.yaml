@@ -9,3 +9,11 @@
 
 controllers:
     resource: routing.controllers
+# config/routes.yaml
+# config/routes.yaml
+# config/routes.yaml
+admin_dashboard:
+    path: /admin
+    controller: App\Controller\Admin\DashboardController::index
+
+# Esto asegura que Symfony sepa exactamente qué archivo cargar al escribir /admin

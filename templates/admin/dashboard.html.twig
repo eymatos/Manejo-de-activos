@@ -1,0 +1,156 @@
+{% extends '@EasyAdmin/page/content.html.twig' %}
+
+{% block content_title %}Resumen Institucional de Inventario{% endblock %}
+
+{% block main %}
+    <style>
+        .stat-card {
+            border: none;
+            border-radius: 15px;
+            color: white;
+            padding: 20px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            min-height: 110px; /* Altura controlada para evitar estiramiento */
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .bg-gradient-blue { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .bg-gradient-pink { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+
+        .icon-circle {
+            background: rgba(255,255,255,0.2);
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 15px;
+        }
+
+        .chart-container-box {
+            background: white;
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            height: 240px; /* Altura fija para que coincida con las dos tarjetas */
+        }
+
+        .table-modern {
+            background: white;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            margin-top: 20px;
+        }
+
+        .badge-type {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.7rem;
+        }
+    </style>
+
+    <div class="row g-4">
+        <div class="col-md-4">
+            <div class="card stat-card bg-gradient-blue">
+                <div class="icon-circle"><i class="fas fa-laptop fa-lg"></i></div>
+                <div>
+                    <div class="small fw-bold opacity-75">TOTAL ACTIVOS</div>
+                    <div class="h2 mb-0 fw-bold">{{ totalAssets }}</div>
+                </div>
+            </div>
+            <div class="card stat-card bg-gradient-pink">
+                <div class="icon-circle"><i class="fas fa-tools fa-lg"></i></div>
+                <div>
+                    <div class="small fw-bold opacity-75">EN REPARACIÓN</div>
+                    <div class="h2 mb-0 fw-bold">{{ inRepair }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8">
+            <div class="chart-container-box">
+                <h6 class="fw-bold mb-3"><i class="fas fa-chart-pie me-2 text-primary"></i>Equipos por Departamento</h6>
+                <div style="height: 160px;">
+                    <canvas id="deptChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="table-modern">
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-center">
+            <h5 class="mb-0 fw-bold">Actividad Reciente</h5>
+            <a href="{{ ea_url().setController('App\\Controller\\Admin\\AssetTransactionCrudController') }}" class="btn btn-sm btn-outline-primary rounded-pill">Ver Historial Completo</a>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="bg-light small fw-bold text-uppercase">
+                    <tr>
+                        <th class="ps-4">Fecha</th>
+                        <th>Activo</th>
+                        <th>Responsable</th>
+                        <th>Tipo</th>
+                        <th>Movimiento</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transaction in recentTransactions %}
+                        <tr>
+                            <td class="ps-4 small">
+                                <strong>{{ transaction.createdAt|date('d/m/Y') }}</strong><br>
+                                <span class="text-muted">{{ transaction.createdAt|date('H:i') }}</span>
+                            </td>
+                            <td class="fw-bold">{{ transaction.asset }}</td>
+                            <td class="text-dark">
+                                <i class="far fa-user me-1 text-muted"></i>
+                                {{ transaction.assignedTo ?: 'No asignado' }}
+                            </td>
+                            <td>
+                                {% set color = 'bg-info' %}
+                                {% if 'REPARACION' in transaction.type %}{% set color = 'bg-danger' %}{% endif %}
+                                {% if 'TRASLADO' in transaction.type %}{% set color = 'bg-success' %}{% endif %}
+                                <span class="badge {{ color }} badge-type">{{ transaction.type }}</span>
+                            </td>
+                            <td class="small">
+                                {% if transaction.originDepartment %}
+                                    <span class="text-muted">{{ transaction.originDepartment }}</span>
+                                {% else %}
+                                    <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">NUEVO</span>
+                                {% endif %}
+                                <i class="fas fa-arrow-right mx-2 text-muted opacity-50"></i>
+                                <span class="fw-bold">{{ transaction.destinationDepartment }}</span>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            new Chart(document.getElementById('deptChart'), {
+                type: 'doughnut',
+                data: {
+                    labels: {{ chartLabels|json_encode|raw }},
+                    datasets: [{
+                        data: {{ chartData|json_encode|raw }},
+                        backgroundColor: ['#667eea', '#43e97b', '#fa709a', '#f6d365', '#4facfe', '#00f2fe'],
+                        borderWidth: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: '70%',
+                    plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: { size: 11 } } } }
+                }
+            });
+        });
+    </script>
+{% endblock %}
