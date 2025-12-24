@@ -4,10 +4,12 @@ namespace App\Controller\Admin;
 
 use App\Entity\User;
 use EasyCorp\Bundle\EasyAdminBundle\Controller\AbstractCrudController;
+use EasyCorp\Bundle\EasyAdminBundle\Config\Crud;
 use EasyCorp\Bundle\EasyAdminBundle\Field\IdField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\EmailField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\TextField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\ChoiceField;
+use EasyCorp\Bundle\EasyAdminBundle\Field\AssociationField;
 use Symfony\Component\Form\Extension\Core\Type\PasswordType;
 use Symfony\Component\Form\Extension\Core\Type\RepeatedType;
 
@@ -18,6 +20,14 @@ class UserCrudController extends AbstractCrudController
         return User::class;
     }
 
+    public function configureCrud(Crud $crud): Crud
+    {
+        return $crud
+            ->setEntityLabelInSingular('Usuario')
+            ->setEntityLabelInPlural('Usuarios')
+            ->setPageTitle('index', 'Gestión de Usuarios y Accesos');
+    }
+
     public function configureFields(string $pageName): iterable
     {
         return [
@@ -25,27 +35,33 @@ class UserCrudController extends AbstractCrudController
 
             EmailField::new('email', 'Correo Electrónico'),
 
-            // Campo de contraseña con validación de repetición
-            TextField::new('password', 'Contraseña')
+            TextField::new('plainPassword', 'Contraseña')
                 ->setFormType(RepeatedType::class)
                 ->setFormTypeOptions([
                     'type' => PasswordType::class,
                     'first_options' => ['label' => 'Contraseña'],
                     'second_options' => ['label' => 'Repetir Contraseña'],
-                    'mapped' => false, // Importante para no chocar con el hash
                 ])
-                ->setRequired($pageName === 'new')
+                ->setRequired($pageName === Crud::PAGE_NEW)
                 ->onlyOnForms(),
 
-            // Selector de Roles (Symfony guarda los roles como un Array)
+            AssociationField::new('department', 'Departamento / Área')
+                ->setHelp('Asigne el departamento para que el usuario pueda firmar recepciones.'),
+
             ChoiceField::new('roles', 'Permisos / Roles')
                 ->allowMultipleChoices()
                 ->setChoices([
-                    'Administrador' => 'ROLE_ADMIN',
+                    'Administrador Total' => 'ROLE_ADMIN',
+                    'Encargado de Contabilidad' => 'ROLE_CONTABILIDAD',
+                    'Encargado de Tecnología' => 'ROLE_TECNOLOGIA',
                     'Usuario Estándar' => 'ROLE_USER',
-                    'Encargado de Inventario' => 'ROLE_EDITOR',
                 ])
-                ->renderAsBadges(),
+                ->renderAsBadges([
+                    'ROLE_ADMIN' => 'danger',
+                    'ROLE_CONTABILIDAD' => 'success',
+                    'ROLE_TECNOLOGIA' => 'info',
+                    'ROLE_USER' => 'secondary',
+                ]),
         ];
     }
 }

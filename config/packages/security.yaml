@@ -1,10 +1,15 @@
-# config/packages/security.yaml
 security:
     # 1. Configuración del sistema de cifrado
     password_hashers:
-        # Sincronizamos con el hash $2y$ visto en tu base de datos (BCRYPT)
         App\Entity\User: 'bcrypt'
         Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'bcrypt'
+
+    # NUEVO: Jerarquía de Roles
+    # Esto hace que el ADMIN herede automáticamente los permisos de los demás
+    role_hierarchy:
+        ROLE_CONTABILIDAD: ROLE_USER
+        ROLE_TECNOLOGIA:   ROLE_USER
+        ROLE_ADMIN:       [ROLE_CONTABILIDAD, ROLE_TECNOLOGIA, ROLE_USER]
 
     # 2. Configuración del proveedor de usuarios
     providers:
@@ -13,7 +18,7 @@ security:
                 class: App\Entity\User
                 property: email
 
-    # 3. Configuración del Firewall (el corazón de la seguridad)
+    # 3. Configuración del Firewall
     firewalls:
         dev:
             pattern: ^/(_profiler|_wdt|assets|build)/
@@ -21,8 +26,6 @@ security:
         main:
             lazy: true
             provider: app_user_provider
-
-            # Asegúrate de que el nombre AppAuthenticator coincida con tu archivo en src/Security
             custom_authenticator: App\Security\AppAuthenticator
 
             logout:
@@ -35,12 +38,12 @@ security:
                 path: /
                 always_remember_me: true
 
-    # 4. Control de acceso por roles
+    # 4. Control de acceso por roles (MODIFICADO)
     access_control:
-        # Solo usuarios con ROLE_ADMIN pueden entrar a la ruta /admin
-        - { path: ^/admin, roles: ROLE_ADMIN }
+        # Permitimos que Contabilidad, Tecnología y Admin entren al panel
+        - { path: ^/admin, roles: [ROLE_ADMIN, ROLE_CONTABILIDAD, ROLE_TECNOLOGIA] }
 
-# Configuración específica para entornos de prueba (rápida y ligera)
+# Configuración específica para entornos de prueba
 when@test:
     security:
         password_hashers:

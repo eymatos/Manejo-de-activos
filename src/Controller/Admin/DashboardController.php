@@ -14,6 +14,7 @@ use EasyCorp\Bundle\EasyAdminBundle\Config\MenuItem;
 use EasyCorp\Bundle\EasyAdminBundle\Controller\AbstractDashboardController;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 class DashboardController extends AbstractDashboardController
 {
@@ -26,6 +27,18 @@ class DashboardController extends AbstractDashboardController
     #[Route('/admin', name: 'admin')]
     public function index(): Response
     {
+        /** @var User $user */
+        $user = $this->getUser();
+
+        // Si NO es admin, redirigimos directamente al Historial de Movimientos
+        if (!$this->isGranted('ROLE_ADMIN')) {
+            return $this->redirectToRoute('admin', [
+                'crudAction' => 'index',
+                'crudControllerFqcn' => AssetTransactionCrudController::class,
+            ]);
+        }
+
+        // LÓGICA SOLO PARA ADMINISTRADORES
         $totalAssets = $this->assetRepository->count([]);
 
         $inRepair = $this->assetRepository->createQueryBuilder('a')
@@ -63,7 +76,6 @@ class DashboardController extends AbstractDashboardController
     {
         return Dashboard::new()
             ->setTitle('Inventario Institucional')
-            // Forzamos el idioma español para los componentes internos
             ->setLocales(['es'])
             ->setTranslationDomain('messages');
     }
@@ -73,12 +85,20 @@ class DashboardController extends AbstractDashboardController
         yield MenuItem::linkToDashboard('Panel de Inicio', 'fa fa-home');
 
         yield MenuItem::section('Gestión de Activos');
-        yield MenuItem::linkToCrud('Listado de Activos', 'fas fa-laptop', Asset::class);
-        yield MenuItem::linkToCrud('Departamentos', 'fas fa-building', Department::class);
 
-        yield MenuItem::section('Auditoría y Usuarios');
+        // CAMBIO AQUÍ: Ahora permitimos que usuarios con rol de Contabilidad o Tecnología
+        // vean el botón. El CrudController se encargará de filtrar los datos.
+        yield MenuItem::linkToCrud('Listado de Activos', 'fas fa-laptop', Asset::class)
+            ->setPermission('ROLE_USER');
+
+        yield MenuItem::linkToCrud('Departamentos', 'fas fa-building', Department::class)
+            ->setPermission('ROLE_ADMIN');
+
+        yield MenuItem::section('Auditoría y Firmas');
         yield MenuItem::linkToCrud('Historial de Movimientos', 'fas fa-history', AssetTransaction::class);
-        yield MenuItem::linkToCrud('Gestión de Usuarios', 'fas fa-users', User::class);
+
+        yield MenuItem::linkToCrud('Gestión de Usuarios', 'fas fa-users', User::class)
+            ->setPermission('ROLE_ADMIN');
 
         yield MenuItem::section('Sistema');
         yield MenuItem::linkToLogout('Cerrar Sesión', 'fa fa-sign-out-alt');

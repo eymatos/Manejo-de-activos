@@ -34,6 +34,11 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     // Propiedad temporal para capturar la clave del formulario sin encriptar
     private ?string $plainPassword = null;
 
+    // NUEVO: Relación con el Departamento al que pertenece el usuario
+    #[ORM\ManyToOne(targetEntity: Department::class)]
+    #[ORM\JoinColumn(nullable: true)] // Puede ser null para SuperAdmins globales
+    private ?Department $department = null;
+
     public function getId(): ?int
     {
         return $this->id;
@@ -81,7 +86,6 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
-    // Métodos para manejar la contraseña en texto plano antes del hash
     public function getPlainPassword(): ?string
     {
         return $this->plainPassword;
@@ -95,7 +99,22 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function eraseCredentials(): void
     {
-        // Limpiamos la clave en texto plano por seguridad después de usarla
         $this->plainPassword = null;
+    }
+
+    public function getDepartment(): ?Department
+    {
+        return $this->department;
+    }
+
+    public function setDepartment(?Department $department): static
+    {
+        $this->department = $department;
+        return $this;
+    }
+
+    public function __toString(): string
+    {
+        return $this->email ?? 'Usuario sin email';
     }
 }

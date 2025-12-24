@@ -6,7 +6,7 @@ use App\Repository\AssetTransactionRepository;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: AssetTransactionRepository::class)]
-#[ORM\HasLifecycleCallbacks] // Para automatizar la fecha
+#[ORM\HasLifecycleCallbacks]
 class AssetTransaction
 {
     #[ORM\Id]
@@ -23,9 +23,11 @@ class AssetTransaction
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $observations = null;
 
-    // NUEVO: Nombre de la persona a quien se le asigna el activo
     #[ORM\Column(length: 255, nullable: true)]
     private ?string $assignedTo = null;
+
+    #[ORM\Column(length: 20)]
+    private ?string $status = 'SOLICITADO';
 
     #[ORM\ManyToOne(inversedBy: 'assetTransactions')]
     #[ORM\JoinColumn(nullable: false)]
@@ -39,12 +41,35 @@ class AssetTransaction
 
     #[ORM\ManyToOne]
     #[ORM\JoinColumn(nullable: false)]
-    private ?User $user = null;
+    private ?User $user = null; // Quien crea la solicitud
+
+    // --- CAMPOS PARA FIRMAS DIGITALES (AUDITORÍA) ---
+
+    #[ORM\ManyToOne]
+    private ?User $techApprovedBy = null; // Firma de Tecnología
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $techApprovedAt = null;
+
+    #[ORM\ManyToOne]
+    private ?User $accountingApprovedBy = null; // Firma de Contabilidad
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $accountingApprovedAt = null;
+
+    #[ORM\ManyToOne]
+    private ?User $receivedBy = null; // Firma del Responsable de Destino (Área que recibe)
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $receivedAt = null;
 
     #[ORM\PrePersist]
     public function setCreatedAtValue(): void
     {
         $this->createdAt = new \DateTimeImmutable();
+        if (null === $this->status) {
+            $this->status = 'SOLICITADO';
+        }
     }
 
     public function getId(): ?int
@@ -96,6 +121,17 @@ class AssetTransaction
         return $this;
     }
 
+    public function getStatus(): ?string
+    {
+        return $this->status;
+    }
+
+    public function setStatus(string $status): static
+    {
+        $this->status = $status;
+        return $this;
+    }
+
     public function getAsset(): ?Asset
     {
         return $this->asset;
@@ -140,12 +176,80 @@ class AssetTransaction
         return $this;
     }
 
+    // Getters y Setters de Firmas Digitales
+
+    public function getTechApprovedBy(): ?User
+    {
+        return $this->techApprovedBy;
+    }
+
+    public function setTechApprovedBy(?User $techApprovedBy): static
+    {
+        $this->techApprovedBy = $techApprovedBy;
+        return $this;
+    }
+
+    public function getTechApprovedAt(): ?\DateTimeImmutable
+    {
+        return $this->techApprovedAt;
+    }
+
+    public function setTechApprovedAt(?\DateTimeImmutable $techApprovedAt): static
+    {
+        $this->techApprovedAt = $techApprovedAt;
+        return $this;
+    }
+
+    public function getAccountingApprovedBy(): ?User
+    {
+        return $this->accountingApprovedBy;
+    }
+
+    public function setAccountingApprovedBy(?User $accountingApprovedBy): static
+    {
+        $this->accountingApprovedBy = $accountingApprovedBy;
+        return $this;
+    }
+
+    public function getAccountingApprovedAt(): ?\DateTimeImmutable
+    {
+        return $this->accountingApprovedAt;
+    }
+
+    public function setAccountingApprovedAt(?\DateTimeImmutable $accountingApprovedAt): static
+    {
+        $this->accountingApprovedAt = $accountingApprovedAt;
+        return $this;
+    }
+
+    public function getReceivedBy(): ?User
+    {
+        return $this->receivedBy;
+    }
+
+    public function setReceivedBy(?User $receivedBy): static
+    {
+        $this->receivedBy = $receivedBy;
+        return $this;
+    }
+
+    public function getReceivedAt(): ?\DateTimeImmutable
+    {
+        return $this->receivedAt;
+    }
+
+    public function setReceivedAt(?\DateTimeImmutable $receivedAt): static
+    {
+        $this->receivedAt = $receivedAt;
+        return $this;
+    }
+
     public function __toString(): string
     {
-        return sprintf('%s - %s (%s)',
+        return sprintf('[%s] %s - %s',
+            $this->status,
             $this->type,
-            $this->asset ? $this->asset->getName() : 'Sin Activo',
-            $this->createdAt ? $this->createdAt->format('d/m/Y') : 'Sin fecha'
+            $this->asset ? $this->asset->getName() : 'Sin Activo'
         );
     }
 }

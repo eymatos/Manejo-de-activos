@@ -27,31 +27,31 @@ class AppAuthenticator extends AbstractLoginFormAuthenticator
     }
 
     public function authenticate(Request $request): Passport
-{
-    // Usamos el método tradicional para capturar datos del formulario
-    $email = $request->request->get('email', '');
-    $password = $request->request->get('password', '');
-    $csrfToken = $request->request->get('_csrf_token', '');
+    {
+        $email = $request->request->get('email', '');
+        $password = $request->request->get('password', '');
+        $csrfToken = $request->request->get('_csrf_token', '');
 
-    $request->getSession()->set(SecurityRequestAttributes::LAST_USERNAME, $email);
+        $request->getSession()->set(SecurityRequestAttributes::LAST_USERNAME, $email);
 
-    return new Passport(
-        new UserBadge($email),
-        new PasswordCredentials($password),
-        [
-            new CsrfTokenBadge('authenticate', $csrfToken),
-            new RememberMeBadge(),
-        ]
-    );
-}
+        return new Passport(
+            new UserBadge($email),
+            new PasswordCredentials($password),
+            [
+                // Mantenemos 'authenticate' que es el valor por defecto en login
+                new CsrfTokenBadge('authenticate', $csrfToken),
+                new RememberMeBadge(),
+            ]
+        );
+    }
 
     public function onAuthenticationSuccess(Request $request, TokenInterface $token, string $firewallName): ?Response
     {
+        // Limpiamos la caché de rutas previas para evitar conflictos de tokens en formularios
         if ($targetPath = $this->getTargetPath($request->getSession(), $firewallName)) {
             return new RedirectResponse($targetPath);
         }
 
-        // Redirige al nombre de ruta definido en DashboardController
         return new RedirectResponse($this->urlGenerator->generate('admin'));
     }
 

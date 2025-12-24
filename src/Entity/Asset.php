@@ -8,7 +8,7 @@ use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity(repositoryClass: AssetRepository::class)]
-#[ORM\HasLifecycleCallbacks] // Esto permite que las fechas se actualicen solas
+#[ORM\HasLifecycleCallbacks]
 class Asset
 {
     #[ORM\Id]
@@ -34,6 +34,13 @@ class Asset
     #[ORM\Column(length: 255)]
     private ?string $status = null;
 
+    #[ORM\Column(length: 100)]
+    private ?string $category = null;
+
+    // NUEVO: Almacena el nombre de la persona que tiene el activo actualmente
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $currentHolder = null;
+
     #[ORM\Column]
     private ?\DateTimeImmutable $createdAt = null;
 
@@ -53,7 +60,6 @@ class Asset
     public function __construct()
     {
         $this->assetTransactions = new ArrayCollection();
-        // Inicializamos las fechas por defecto
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
     }
@@ -61,7 +67,9 @@ class Asset
     #[ORM\PrePersist]
     public function setCreatedAtValue(): void
     {
-        $this->createdAt = new \DateTimeImmutable();
+        if ($this->createdAt === null) {
+            $this->createdAt = new \DateTimeImmutable();
+        }
         $this->updatedAt = new \DateTimeImmutable();
     }
 
@@ -142,6 +150,28 @@ class Asset
         return $this;
     }
 
+    public function getCategory(): ?string
+    {
+        return $this->category;
+    }
+
+    public function setCategory(string $category): static
+    {
+        $this->category = $category;
+        return $this;
+    }
+
+    public function getCurrentHolder(): ?string
+    {
+        return $this->currentHolder;
+    }
+
+    public function setCurrentHolder(?string $currentHolder): static
+    {
+        $this->currentHolder = $currentHolder;
+        return $this;
+    }
+
     public function getCreatedAt(): ?\DateTimeImmutable
     {
         return $this->createdAt;
@@ -201,10 +231,14 @@ class Asset
         }
         return $this;
     }
+
     public function __toString(): string
     {
-        // Esto mostrará: "Laptop Dell (SN: 15456466797)" en los desplegables
-        return sprintf('%s %s (SN: %s)', $this->name, $this->brand, $this->serial);
+        return sprintf('[%s] %s %s (SN: %s)',
+            $this->category ?? 'S/C',
+            $this->name,
+            $this->brand,
+            $this->serial
+        );
     }
-
 }

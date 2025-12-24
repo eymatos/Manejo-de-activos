@@ -3,18 +3,23 @@
 namespace App\Controller\Admin;
 
 use App\Entity\Asset;
+use App\Entity\User;
 use EasyCorp\Bundle\EasyAdminBundle\Controller\AbstractCrudController;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Crud;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Action;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Actions;
 use EasyCorp\Bundle\EasyAdminBundle\Config\Filters;
-use EasyCorp\Bundle\EasyAdminBundle\Filter\EntityFilter;
 use EasyCorp\Bundle\EasyAdminBundle\Field\IdField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\TextField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\AssociationField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\DateTimeField;
 use EasyCorp\Bundle\EasyAdminBundle\Field\ChoiceField;
 use EasyCorp\Bundle\EasyAdminBundle\Context\AdminContext;
+use EasyCorp\Bundle\EasyAdminBundle\Collection\FieldCollection;
+use EasyCorp\Bundle\EasyAdminBundle\Collection\FilterCollection;
+use EasyCorp\Bundle\EasyAdminBundle\Dto\EntityDto;
+use EasyCorp\Bundle\EasyAdminBundle\Dto\SearchDto;
+use Doctrine\ORM\QueryBuilder;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -29,19 +34,39 @@ class AssetCrudController extends AbstractCrudController
         return Asset::class;
     }
 
+    public function createIndexQueryBuilder(SearchDto $searchDto, EntityDto $entityDto, FieldCollection $fields, FilterCollection $filters): QueryBuilder
+    {
+        $qb = parent::createIndexQueryBuilder($searchDto, $entityDto, $fields, $filters);
+
+        /** @var User $user */
+        $user = $this->getUser();
+        if (!$user) return $qb;
+
+        if ($this->isGranted('ROLE_ADMIN')) {
+            return $qb;
+        }
+
+        $userDept = $user->getDepartment();
+        $rootAlias = $qb->getRootAliases()[0];
+
+        if ($userDept) {
+            $qb->andWhere(sprintf('%s.currentDepartment = :myDept', $rootAlias))
+               ->setParameter('myDept', $userDept);
+        } else {
+            $qb->andWhere('1 = 0');
+        }
+
+        return $qb;
+    }
+
     public function configureCrud(Crud $crud): Crud
     {
         return $crud
             ->setEntityLabelInSingular('Activo')
             ->setEntityLabelInPlural('Activos')
             ->setPageTitle('index', 'Listado General de Activos')
-            ->setPageTitle('new', 'Registrar Nuevo Activo')
-            ->setPageTitle('edit', 'Modificar Información del Activo')
-            ->setPageTitle('detail', 'Información Detallada del Activo')
-            ->setSearchFields(['name', 'brand', 'serial', 'assetNumber', 'nationalInventoryNumber'])
-            ->setFormOptions([
-                'csrf_protection' => false,
-            ]);
+            ->setSearchFields(['name', 'brand', 'serial', 'assetNumber', 'nationalInventoryNumber', 'currentHolder'])
+            ->setFormOptions(['csrf_protection' => false]);
     }
 
     public function configureActions(Actions $actions): Actions
@@ -59,27 +84,35 @@ class AssetCrudController extends AbstractCrudController
         return $actions
             ->add(Crud::PAGE_INDEX, $exportarExcel)
             ->add(Crud::PAGE_INDEX, $exportarPdf)
-            ->update(Crud::PAGE_INDEX, Action::NEW, function (Action $action) {
-                return $action->setLabel('Añadir Activo');
-            })
-            ->update(Crud::PAGE_INDEX, Action::EDIT, function (Action $action) {
-                return $action->setLabel('Editar');
-            })
-            ->update(Crud::PAGE_INDEX, Action::DELETE, function (Action $action) {
-                return $action->setLabel('Eliminar');
-            });
+            ->setPermission(Action::NEW, 'ROLE_ADMIN')
+            ->setPermission(Action::DELETE, 'ROLE_ADMIN');
     }
 
+    /**
+     * EXPORTACIÓN FILTRADA A EXCEL
+     */
     public function exportarExcel(AdminContext $context): StreamedResponse
     {
-        $assets = $this->container->get('doctrine')->getRepository(Asset::class)->findAll();
+        /** @var User $user */
+        $user = $this->getUser();
+        $repo = $this->container->get('doctrine')->getRepository(Asset::class);
+
+        // Si NO es Admin, filtramos los activos que van al Excel
+        if (!$this->isGranted('ROLE_ADMIN') && $user->getDepartment()) {
+            $assets = $repo->findBy(['currentDepartment' => $user->getDepartment()]);
+        } elseif ($this->isGranted('ROLE_ADMIN')) {
+            $assets = $repo->findAll();
+        } else {
+            $assets = [];
+        }
+
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Inventario');
 
-        $headers = ['ID', 'Nombre', 'Marca', 'Serie', 'ID Local', 'Estado', 'Departamento'];
+        $headers = ['ID', 'Nombre', 'Marca', 'Serie', 'ID Local', 'Estado', 'Departamento', 'Responsable'];
         $sheet->fromArray($headers, null, 'A1');
-        $sheet->getStyle('A1:G1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:H1')->getFont()->setBold(true);
 
         $rowCount = 2;
         foreach ($assets as $asset) {
@@ -90,10 +123,11 @@ class AssetCrudController extends AbstractCrudController
             $sheet->setCellValue('E' . $rowCount, $asset->getAssetNumber());
             $sheet->setCellValue('F' . $rowCount, $asset->getStatus());
             $sheet->setCellValue('G' . $rowCount, $asset->getCurrentDepartment() ? $asset->getCurrentDepartment()->getName() : 'N/A');
+            $sheet->setCellValue('H' . $rowCount, $asset->getCurrentHolder());
             $rowCount++;
         }
 
-        foreach (range('A', 'G') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
+        foreach (range('A', 'H') as $col) { $sheet->getColumnDimension($col)->setAutoSize(true); }
 
         $writer = new Xlsx($spreadsheet);
         return new StreamedResponse(function () use ($writer) { $writer->save('php://output'); }, 200, [
@@ -102,9 +136,22 @@ class AssetCrudController extends AbstractCrudController
         ]);
     }
 
+    /**
+     * EXPORTACIÓN FILTRADA A PDF
+     */
     public function exportarPdf(AdminContext $context): Response
     {
-        $assets = $this->container->get('doctrine')->getRepository(Asset::class)->findAll();
+        /** @var User $user */
+        $user = $this->getUser();
+        $repo = $this->container->get('doctrine')->getRepository(Asset::class);
+
+        if (!$this->isGranted('ROLE_ADMIN') && $user->getDepartment()) {
+            $assets = $repo->findBy(['currentDepartment' => $user->getDepartment()]);
+        } elseif ($this->isGranted('ROLE_ADMIN')) {
+            $assets = $repo->findAll();
+        } else {
+            $assets = [];
+        }
 
         $html = $this->renderView('admin/pdf_report.html.twig', [
             'assets' => $assets,
@@ -113,7 +160,6 @@ class AssetCrudController extends AbstractCrudController
 
         $options = new Options();
         $options->set('defaultFont', 'Helvetica');
-
         $dompdf = new Dompdf($options);
         $dompdf->loadHtml($html);
         $dompdf->setPaper('A4', 'landscape');
@@ -132,8 +178,14 @@ class AssetCrudController extends AbstractCrudController
             TextField::new('name', 'Nombre'),
             TextField::new('brand', 'Marca'),
             TextField::new('serial', 'S/N'),
-            TextField::new('assetNumber', 'ID Local')->hideOnIndex(),
-            TextField::new('nationalInventoryNumber', 'ID Nacional')->hideOnIndex(),
+            TextField::new('currentHolder', 'Responsable Actual'),
+            ChoiceField::new('category', 'Categoría')
+                ->setChoices([
+                    'Cómputo' => 'COMPUTO',
+                    'Mobiliario' => 'MOBILIARIO',
+                    'Vehículo' => 'VEHICULO',
+                    'Otros' => 'OTRO'
+                ]),
             ChoiceField::new('status', 'Estado')->setChoices([
                 'Excelente' => 'Excelente', 'Bueno' => 'Bueno', 'Regular' => 'Regular',
                 'En Reparación' => 'En Reparación', 'Desuso' => 'Desuso'

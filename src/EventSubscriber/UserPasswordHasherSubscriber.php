@@ -21,10 +21,13 @@ class UserPasswordHasherSubscriber implements EventSubscriberInterface
     {
         return [
             BeforeEntityPersistedEvent::class => ['handleBeforePersist'],
-            BeforeEntityUpdatedEvent::class => ['hashPassword'],
+            BeforeEntityUpdatedEvent::class => ['handleBeforeUpdate'],
         ];
     }
 
+    /**
+     * Al CREAR la transacción (Equivale a llenar el formulario físico)
+     */
     public function handleBeforePersist(BeforeEntityPersistedEvent $event): void
     {
         $entity = $event->getEntityInstance();
@@ -34,15 +37,34 @@ class UserPasswordHasherSubscriber implements EventSubscriberInterface
         }
 
         if ($entity instanceof AssetTransaction) {
-            $this->processAssetTransaction($entity);
+            // Registramos quién crea la solicitud (Firma del Solicitante)
+            if ($this->security->getUser()) {
+                $entity->setUser($this->security->getUser());
+            }
+
+            $asset = $entity->getAsset();
+            if ($asset) {
+                // Capturamos el origen automáticamente desde la ubicación actual del activo
+                if ($asset->getCurrentDepartment()) {
+                    $entity->setOriginDepartment($asset->getCurrentDepartment());
+                }
+            }
         }
     }
 
-    public function hashPassword(BeforeEntityUpdatedEvent $event): void
+    /**
+     * Al ACTUALIZAR la transacción (Proceso de Firmas Digitales)
+     */
+    public function handleBeforeUpdate(BeforeEntityUpdatedEvent $event): void
     {
         $entity = $event->getEntityInstance();
+
         if ($entity instanceof User) {
             $this->processUserPassword($entity);
+        }
+
+        if ($entity instanceof AssetTransaction) {
+            $this->processDigitalSignatures($entity);
         }
     }
 
@@ -56,25 +78,56 @@ class UserPasswordHasherSubscriber implements EventSubscriberInterface
         }
     }
 
-    private function processAssetTransaction(AssetTransaction $transaction): void
+    /**
+     * Lógica de Validación de Firmas según los formularios de Excel
+     */
+    private function processDigitalSignatures(AssetTransaction $transaction): void
     {
-        if ($this->security->getUser()) {
-            $transaction->setUser($this->security->getUser());
+        $asset = $transaction->getAsset();
+        if (!$asset) return;
+
+        $currentUser = $this->security->getUser();
+        if (!$currentUser) return;
+
+        // 1. Gestionar Timestamps de Firmas
+        if ($transaction->getTechApprovedBy() && !$transaction->getTechApprovedAt()) {
+            $transaction->setTechApprovedAt(new \DateTimeImmutable());
         }
 
-        $asset = $transaction->getAsset();
-        $destination = $transaction->getDestinationDepartment();
+        if ($transaction->getAccountingApprovedBy() && !$transaction->getAccountingApprovedAt()) {
+            $transaction->setAccountingApprovedAt(new \DateTimeImmutable());
+        }
 
-        if ($asset && $transaction->getType() === 'TRASLADO') {
-            // CAPTURAMOS EL ORIGEN: Guardamos el depto actual del activo antes de cambiarlo
-            if ($asset->getCurrentDepartment()) {
-                $transaction->setOriginDepartment($asset->getCurrentDepartment());
-            }
+        if ($transaction->getReceivedBy() && !$transaction->getReceivedAt()) {
+            $transaction->setReceivedAt(new \DateTimeImmutable());
+        }
 
-            // AHORA SÍ: Movemos el activo al nuevo destino
+        // 2. VERIFICACIÓN FINAL: ¿Podemos mover el activo?
+        $isComputer = ($asset->getCategory() === 'COMPUTO');
+
+        $hasTechSignature = $transaction->getTechApprovedBy() !== null;
+        $hasAccountingSignature = $transaction->getAccountingApprovedBy() !== null;
+        $hasReceiverSignature = $transaction->getReceivedBy() !== null;
+
+        $readyForTransfer = $hasAccountingSignature && $hasReceiverSignature;
+
+        if ($isComputer && !$hasTechSignature) {
+            $readyForTransfer = false;
+        }
+
+        if ($readyForTransfer) {
+            $destination = $transaction->getDestinationDepartment();
             if ($destination) {
+                // Ejecutamos el traslado físico en el sistema
                 $asset->setCurrentDepartment($destination);
+
+                // ACTUALIZACIÓN SOLICITADA: Guardamos quién tiene el activo ahora
+                if ($transaction->getAssignedTo()) {
+                    $asset->setCurrentHolder($transaction->getAssignedTo());
+                }
+
                 $asset->setUpdatedAt(new \DateTimeImmutable());
+                $transaction->setStatus('ACEPTADO');
             }
         }
     }
